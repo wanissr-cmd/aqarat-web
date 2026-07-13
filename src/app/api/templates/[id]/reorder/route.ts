@@ -1,15 +1,31 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireCompanyId } from '@/lib/auth-helpers'
+import { getCurrentUser } from '@/lib/auth-helpers'
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const companyId = await requireCompanyId()
+  const user = await getCurrentUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'غير مصرح - يرجى تسجيل الدخول' }, { status: 401 })
+  }
+
   const template = await prisma.template.findUnique({
     where: { id: params.id },
-    select: { companyId: true },
+    select: { companyId: true, isGlobal: true },
   })
-  if (!template || template.companyId !== companyId) {
+
+  if (!template) {
+    return NextResponse.json({ error: 'القالب غير موجود' }, { status: 404 })
+  }
+
+  // ✅ الإصلاح: صلاحية التعديل حسب الحالة
+  // - Super Admin يقدر يعدّل أي تمبلت (عام أو خاص)
+  // - شركة عادية تقدر تعدّل بس تمبلتاتها الخاصة (مش العامة)
+  const isOwner = template.companyId === user.companyId
+  const isSuperAdminUser = user.role === 'SUPER_ADMIN'
+
+  if (!isSuperAdminUser && (template.isGlobal || !isOwner)) {
     return NextResponse.json({ error: 'غير مخول' }, { status: 403 })
   }
 

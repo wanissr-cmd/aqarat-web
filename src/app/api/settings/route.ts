@@ -14,6 +14,7 @@ export async function GET(_: NextRequest) {
         nameEn: true,
         representativeName: true,
         logo: true,
+        canEditTemplates: true, // ✅ إضافة: عشان الواجهة تعرف تعرض زرار تخصيص التمبلت أو لأ
       },
     })
 
@@ -33,6 +34,8 @@ export async function PATCH(req: NextRequest) {
     const companyId = await requireCompanyId()
     const body = await req.json()
 
+    // ملحوظة: canEditTemplates متعمّد إنه مش موجود هنا —
+    // الصلاحية دي لازم تتغير من لوحة الـ Super Admin بس، مش من الشركة نفسها
     const updated = await prisma.company.update({
       where: { id: companyId },
       data: {

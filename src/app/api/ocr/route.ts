@@ -1,9 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyId } from '@/lib/auth-helpers'
 
 export async function POST(req: NextRequest) {
   try {
+    // ✅ الإصلاح: تأكد إن المستخدم مسجل دخول قبل استهلاك رصيد Google Vision API
+    // ده مش بيلمس بيانات شركة تانية، لكنه بيمنع أي حد غريب من استنزاف الرصيد المدفوع
+    await requireCompanyId()
+
     const formData = await req.formData()
     const image = formData.get('image') as File
 
@@ -51,6 +56,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, data: extracted, rawText: fullText })
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json({ error: 'غير مصرح - يرجى تسجيل الدخول' }, { status: 401 })
+    }
     console.error('OCR Process Error:', error)
     return NextResponse.json({ error: 'فشل النظام في معالجة الصورة', details: (error as Error).message }, { status: 500 })
   }

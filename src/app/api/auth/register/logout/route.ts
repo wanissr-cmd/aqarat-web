@@ -1,8 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const supabase = createClient()
   await supabase.auth.signOut()
-  return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_SUPABASE_URL!.replace('supabase.co', 'localhost:3000')))
+
+  // ✅ الإصلاح: نجيب رابط الموقع الحالي من الـ request نفسه
+  // ده بيشتغل صح سواء محلياً (localhost:3000) أو على الإنتاج (aqarat-web.vercel.app)
+  // بدون أي علاقة برابط Supabase
+  const origin = req.nextUrl.origin
+
+  return NextResponse.redirect(new URL('/login', origin))
 }

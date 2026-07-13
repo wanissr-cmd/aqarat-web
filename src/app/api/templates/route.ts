@@ -6,8 +6,17 @@ import { requireCompanyId } from '@/lib/auth-helpers'
 export async function GET() {
   try {
     const companyId = await requireCompanyId()
+
+    // ✅ الإصلاح: رجّع التمبلتات العامة (isGlobal) + تمبلتات الشركة الخاصة بيها
+    // بدل الاعتماد على companyId بس، اللي بقى null للتمبلتات العامة بعد التحويل
     const templates = await prisma.template.findMany({
-      where: { companyId, isActive: true },
+      where: {
+        isActive: true,
+        OR: [
+          { isGlobal: true },
+          { companyId },
+        ],
+      },
       include: { clauses: { orderBy: { order: 'asc' } } },
       orderBy: { type: 'asc' },
     })
@@ -22,11 +31,15 @@ export async function POST(req: NextRequest) {
   try {
     const companyId = await requireCompanyId()
     const body = await req.json()
+
+    // ✅ الإصلاح: تمبلت جديد من شركة عادية دايماً بيكون خاص بيها (isGlobal: false)
+    // مفيش شركة عادية تقدر تنشئ تمبلت عام مباشرة
     const template = await prisma.template.create({
       data: {
         type: body.type,
         nameAr: body.nameAr,
         companyId,
+        isGlobal: false,
       },
       include: { clauses: true },
     })

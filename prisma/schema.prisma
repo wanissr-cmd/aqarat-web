@@ -9,47 +9,47 @@ datasource db {
 }
 
 model Company {
-  id                 String     @id @default(cuid())
+  id                 String         @id @default(cuid())
   nameAr             String
   nameEn             String?
   representativeName String
   logo               String?
   stamp              String?
-  authUserId         String?    @unique // ✅ ربط مع Supabase Auth (المالك الأساسي)
-  users              User[]
+  authUserId         String?        @unique
+  canEditTemplates   Boolean        @default(false)
+  approvalStatus     ApprovalStatus @default(PENDING)
+  approvedAt         DateTime?
+  approvedBy         String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
   contracts          Contract[]
   templates          Template[]
   tenants            Tenant[]
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  users              User[]
+
+  @@index([approvalStatus])
 }
 
 model User {
   id         String   @id @default(cuid())
-  authUserId String   @unique // ✅ ربط مع Supabase Auth
+  authUserId String   @unique
   email      String   @unique
   name       String
   role       UserRole @default(STAFF)
-  company    Company  @relation(fields: [companyId], references: [id])
-  companyId  String
+  companyId  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  company    Company? @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
   @@index([email])
   @@index([authUserId])
 }
 
-enum UserRole {
-  ADMIN
-  STAFF
-}
-
 model Tenant {
-  id             String      @id @default(cuid())
-  company        Company     @relation(fields: [companyId], references: [id])
+  id             String     @id @default(cuid())
   companyId      String
-  tenantType     TenantType  @default(INDIVIDUAL)
+  tenantType     TenantType @default(INDIVIDUAL)
   tenantName     String?
   namePart1      String?
   namePart2      String?
@@ -70,39 +70,37 @@ model Tenant {
   companyAddress String?
   idImageUrl     String?
   ocrData        Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
   contracts      Contract[]
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  company        Company    @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
   @@index([civilId])
   @@index([companyName])
 }
 
-enum TenantType {
-  INDIVIDUAL
-  COMPANY
-}
-
 model Template {
-  id        String           @id @default(cuid())
-  type      ContractType
-  nameAr    String
-  version   Int              @default(1)
-  isActive  Boolean          @default(true)
-  clauses   TemplateClause[]
-  company   Company          @relation(fields: [companyId], references: [id])
-  companyId String
-  contracts Contract[]
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id           String           @id @default(cuid())
+  type         ContractType
+  nameAr       String
+  version      Int              @default(1)
+  isActive     Boolean          @default(true)
+  isGlobal     Boolean          @default(false)
+  clonedFromId String?
+  companyId    String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  contracts    Contract[]
+  company      Company?         @relation(fields: [companyId], references: [id])
+  clauses      TemplateClause[]
 
   @@index([companyId, type])
+  @@index([isGlobal, type])
 }
 
 model TemplateClause {
   id           String   @id @default(cuid())
-  template     Template @relation(fields: [templateId], references: [id])
   templateId   String
   order        Int
   titleAr      String?
@@ -111,19 +109,18 @@ model TemplateClause {
   isOptional   Boolean  @default(false)
   conditionKey String?
   variables    Json?
+  template     Template @relation(fields: [templateId], references: [id])
 
   @@index([templateId, order])
 }
 
 model Contract {
   id                 String              @id @default(cuid())
+  contractNumber     String
   type               ContractType
   status             ContractStatus      @default(DRAFT)
-  template           Template            @relation(fields: [templateId], references: [id])
   templateId         String
-  tenant             Tenant              @relation(fields: [tenantId], references: [id])
   tenantId           String
-  company            Company             @relation(fields: [companyId], references: [id])
   companyId          String
   creationDate       DateTime            @default(now())
   startDate          DateTime
@@ -160,18 +157,22 @@ model Contract {
   clausesSnapshot    Json?
   pdfUrl             String?
   wordUrl            String?
-  addendums          Addendum[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+  addendums          Addendum[]
+  company            Company             @relation(fields: [companyId], references: [id])
+  template           Template            @relation(fields: [templateId], references: [id])
+  tenant              Tenant              @relation(fields: [tenantId], references: [id])
+
   @@index([companyId, status])
   @@index([tenantId])
   @@index([type])
+  @@index([contractNumber])
 }
 
 model Addendum {
   id           String       @id @default(cuid())
   type         AddendumType
-  contract     Contract     @relation(fields: [contractId], references: [id])
   contractId   String
   creationDate DateTime     @default(now())
   content      String?
@@ -179,8 +180,26 @@ model Addendum {
   wordUrl      String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  contract     Contract     @relation(fields: [contractId], references: [id])
 
   @@index([contractId])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  STAFF
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TenantType {
+  INDIVIDUAL
+  COMPANY
 }
 
 enum ContractType {

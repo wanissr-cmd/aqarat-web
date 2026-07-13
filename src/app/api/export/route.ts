@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { Document, Packer, Paragraph, TextRun, AlignmentType, convertInchesToTwip, SectionType } from 'docx'
 import { buildActiveClauses, buildClausesFromForm } from '@/lib/contract-engine'
+import { requireCompanyId } from '@/lib/auth-helpers'
 
 const CONTRACT_TYPE_LABELS: Record<string, string> = {
   RESIDENTIAL: 'عقد إيجار سكني',
@@ -33,16 +34,71 @@ function arabicRun(text: string, bold = false, size = 26) {
 
 export async function POST(req: NextRequest) {
   try {
+    // ✅ تأكد إن المستخدم مسجل دخول، وجيب companyId من الجلسة
+    const companyId = await requireCompanyId()
+
     const body = await req.json()
-    const { contractData, format, templateClauses, templateId } = body
+    const { format, contractId, contractData: rawContractData, templateClauses, templateId } = body
 
     const { prisma } = await import('@/lib/prisma')
 
+    let contractData: any = rawContractData
     let clausesToUse = Array.isArray(templateClauses) ? templateClauses : []
+    let resolvedTemplateId = templateId
 
-    if (clausesToUse.length === 0 && templateId) {
+    // ✅ الحالة الأساسية المستخدمة فعلياً في الواجهة: تصدير عقد محفوظ عن طريق contractId
+    if (contractId) {
+      const contract = await prisma.contract.findUnique({
+        where: { id: contractId },
+        include: {
+          tenant: true,
+          template: { include: { clauses: { orderBy: { order: 'asc' } } } },
+        },
+      })
+
+      if (!contract) {
+        return NextResponse.json({ error: 'العقد غير موجود' }, { status: 404 })
+      }
+
+      // ✅ تحقق ملكية: العقد لازم يكون تابع لنفس شركة المستخدم
+      if (contract.companyId !== companyId) {
+        return NextResponse.json({ error: 'العقد غير موجود' }, { status: 404 })
+      }
+
+      // ابنِ contractData من بيانات العقد المحفوظة + بيانات المستأجر
+      const savedData = (contract.contractData as any) || {}
+      contractData = {
+        ...savedData,
+        type: contract.type,
+        creationDate: contract.creationDate,
+        tenantType: contract.tenant.tenantType,
+        tenantName: contract.tenant.tenantName,
+        tenantNationality: contract.tenant.nationality,
+        tenantCivilId: contract.tenant.civilId,
+        tenantPhone: contract.tenant.phone,
+        tenantCompanyName: contract.tenant.companyName,
+        tenantRepName: contract.tenant.repName,
+        tenantRepNationality: contract.tenant.repNationality,
+        tenantRepCivilId: contract.tenant.repCivilId,
+        hasGuarantor: contract.hasGuarantor,
+      }
+
+      clausesToUse = (contract.clausesSnapshot as any) || contract.template.clauses
+      resolvedTemplateId = contract.templateId
+    }
+    // ✅ الحالة البديلة (لو استُخدمت الصفحة من مسار آخر يبعت contractData مباشرة، مثل معاينة عقد جديد قبل الحفظ)
+    else if (resolvedTemplateId && clausesToUse.length === 0) {
+      const template = await prisma.template.findUnique({
+        where: { id: resolvedTemplateId },
+        select: { isGlobal: true, companyId: true },
+      })
+
+      if (!template || (!template.isGlobal && template.companyId !== companyId)) {
+        return NextResponse.json({ error: 'غير مصرح بالوصول لهذا القالب' }, { status: 403 })
+      }
+
       clausesToUse = await prisma.templateClause.findMany({
-        where: { templateId },
+        where: { templateId: resolvedTemplateId },
         orderBy: { order: 'asc' },
       })
     }
@@ -180,6 +236,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'صيغة غير مدعومة' }, { status: 400 })
 
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json({ error: 'غير مصرح - يرجى تسجيل الدخول' }, { status: 401 })
+    }
     console.error('Export error:', error)
     return NextResponse.json({ error: 'حدث خطأ في التصدير: ' + String(error) }, { status: 500 })
   }

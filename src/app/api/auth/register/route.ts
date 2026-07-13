@@ -10,7 +10,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'جميع الحقول مطلوبة' }, { status: 400 })
     }
 
-    // ✅ import داخل الدالة عشان مايتشغلش وقت البناء
     const { prisma } = await import('@/lib/prisma')
 
     const supabase = createSupabaseClient(
@@ -28,6 +27,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: authError?.message || 'فشل إنشاء الحساب' }, { status: 400 })
     }
 
+    // ✅ الإصلاح: الشركة بتتعمل بحالة PENDING افتراضياً (موجودة أصلاً كـ default في الـ schema)
+    // لسه مش هتقدر تستخدم النظام لحد ما الـ Super Admin يوافق عليها
     const company = await prisma.company.create({
       data: {
         nameAr: companyNameAr,
@@ -46,7 +47,15 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, companyId: company.id }, { status: 201 })
+    // ✅ الإصلاح: رسالة واضحة إن الطلب محتاج مراجعة، مش تفعيل فوري
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'تم إرسال طلبك بنجاح، سيتم مراجعته والتواصل معك قريباً',
+        companyId: company.id,
+      },
+      { status: 201 }
+    )
   } catch (error: any) {
     console.error('Register error:', error)
     return NextResponse.json({ error: 'حدث خطأ في إنشاء الحساب: ' + error.message }, { status: 500 })

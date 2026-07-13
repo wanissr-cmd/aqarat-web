@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { FileText, Users, LayoutTemplate, Settings, LayoutDashboard } from 'lucide-react'
 import { LogoutButton } from '@/components/LogoutButton'
+import { getCurrentUser } from '@/lib/auth-helpers'
 
 const NAV_ITEMS = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'الرئيسية' },
@@ -10,7 +12,30 @@ const NAV_ITEMS = [
   { href: '/settings', icon: Settings, label: 'الإعدادات' },
 ]
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  // ✅ الإصلاح: تحقق حقيقي من المستخدم وحالة شركته قبل عرض أي صفحة محمية
+  const user = await getCurrentUser()
+
+  // لو مفيش مستخدم أصلاً (الـ middleware المفروض يكون منع الوصول هنا،
+  // لكن ده تحقق إضافي احتياطي)
+  if (!user) {
+    redirect('/login')
+  }
+
+  // ✅ Super Admin ليه مساره الخاص، مش المفروض يكون هنا في dashboard الشركات العادية
+  if (user.role === 'SUPER_ADMIN') {
+    redirect('/admin')
+  }
+
+  // ✅ الإصلاح الأساسي: تحقق من حالة موافقة الشركة
+  if (!user.company || user.company.approvalStatus === 'PENDING') {
+    redirect('/pending-approval')
+  }
+
+  if (user.company.approvalStatus === 'REJECTED') {
+    redirect('/registration-rejected')
+  }
+
   return (
     <div className="min-h-screen flex flex-col" dir="rtl">
       <header className="bg-white border-b sticky top-0 z-50">
